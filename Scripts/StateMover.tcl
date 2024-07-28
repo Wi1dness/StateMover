@@ -69,11 +69,17 @@ set PARTIAL_READBACK_SCRIPT "$STATEMOVER_PATH/partial_readback.tcl"
 
 source $PARTIAL_READBACK_SCRIPT
 
-proc initialize {} {
+proc initialize {remote ip} {
 	global DEVICE_NAME FULL_BITSTREAM FULL_LOCAL_BITSTREAM FULL_PROBES PREPROCESS_SCRIPT LOGIC_LOCATION_FILE RAM_LOCATION_FILE TASK_NAME READBACK_START_ADDRESS READBACK_FRAME_COUNT READBACK_BRAM_START_ADDRESS READBACK_BRAM_FRAME_COUNT
 
-	open_hw
-	connect_hw_server
+	open_hw_manager
+	if {$remote == "0"} {
+		connect_hw_server
+	} else {
+		connect_hw_server -url $ip:3121 -allow_non_jtag
+		current_hw_target [get_hw_targets */xilinx_tcf/Digilent/*]
+		set_property PARAM.FREQUENCY 15000000 [get_hw_targets */xilinx_tcf/Digilent/*]
+	}
 	open_hw_target
 	set_property PROGRAM.FILE $FULL_BITSTREAM [get_hw_devices $DEVICE_NAME]
 	set_property PROBES.FILE $FULL_PROBES [get_hw_devices $DEVICE_NAME]
@@ -99,6 +105,7 @@ proc program {} {
 	set_property PROGRAM.FILE $FULL_BITSTREAM [get_hw_devices $DEVICE_NAME]
 	program_hw_devices [get_hw_devices $DEVICE_NAME]
 	refresh_hw_device [lindex [get_hw_devices $DEVICE_NAME] 0]
+	refresh_hw_vio -update_output_values [get_hw_vios -of_objects [get_hw_devices $DEVICE_NAME]]
 }
 
 proc run {} {
@@ -204,6 +211,27 @@ proc writeback_full {state_file} {
 	puts [time {
 		program_hw_devices [get_hw_devices $DEVICE_NAME]
 		}]
+	refresh_hw_device [lindex [get_hw_devices $DEVICE_NAME] 0]
+	refresh_hw_vio -update_output_values [get_hw_vios -of_objects [get_hw_devices $DEVICE_NAME]]
+}
+
+proc readback_script {} {
+	global DEVICE_NAME READBACK_FRAME_COUNT_FULL READBACK_FULL_START_ADDRESS
+	global READBACK_FILE LOGIC_LOCATION_FILE RAM_LOCATION_FILE DUMP_HW_STATE_SCRIPT TASK_NAME
+	# global HANDLE_SCRIPT 
+
+	close_hw_target
+	open_hw_target -jtag_mode 1
+
+	rdbk_jtag $READBACK_FILE $READBACK_FRAME_COUNT_FULL $READBACK_FULL_START_ADDRESS 1 0
+	exec rm -rf rams.pickle lutrams.pickle registers.pickle blockrams.pickle hw_state.dump
+	# exec $HANDLE_SCRIPT $READBACK_FILE ./handle.tmp
+	# exec mv ./handle.tmp $READBACK_FILE
+	exec $DUMP_HW_STATE_SCRIPT $LOGIC_LOCATION_FILE $RAM_LOCATION_FILE $READBACK_FILE $TASK_NAME
+
+	close_hw_target
+	open_hw_target
+	current_hw_device [get_hw_devices $DEVICE_NAME]
 	refresh_hw_device [lindex [get_hw_devices $DEVICE_NAME] 0]
 }
 
@@ -323,7 +351,8 @@ proc readback_buried_4 {} {
 proc writeback_buried {state_file} {
 
 	exec set_replay_flag_2writebacks.py $state_file 1
-	writeback_full
+	# writeback_full
+	writeback_full $state_file
 
 	step_2
 
@@ -389,5 +418,3 @@ proc writeback_dram_eth {state_file} {
 
 	exec sudo $DRAM_MOVER_ETH_SCRIPT -writeback $DRAM_START_ADDRESS $DRAM_PAGE_COUNT $state_file
 }
-
-initialize

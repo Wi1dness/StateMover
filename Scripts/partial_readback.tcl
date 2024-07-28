@@ -35,18 +35,30 @@ set globDebug 0
 
 set optOverwrite 0
 
-#Defines word per frame for UltraScale
-set DEF_WPF 123
+if {$ARCH == "UltraScale"} {
+  #Defines word per frame for UltraScale
+  set DEF_WPF 123
+  #Defines pipeline value to add to frame count for UltraScale
+  set DEF_FDR_PIPE_DEPTH 10
+} elseif {$ARCH == "UltraScalePlus"} {
+  #Defines word per frame for UltraScale+
+  set DEF_WPF 93
+  #Defines pipeline value to add to frame count for UltraScale+
+  set DEF_FDR_PIPE_DEPTH 25
+} else {
+  puts "Unsupported Arch: $ARCH"
+}
 
-#Defines pipeline value to add to frame count
-set DEF_FDR_PIPE_DEPTH 10
-
-#Defines UltraScale JTAG instruction opcodes 
-set DEF_USER4              0x23
-set DEF_JCONFIG            0x05
-set DEF_JRDBK              0x04
-set DEF_BYPASS             0x3F
-set DEF_CMD_IDCODE         0x09
+if {$BOARD == "SIDEWINDER"} {
+  #Defines Sidewinder JTAG instruction opcodes 
+  set DEF_USER4              0x923
+  set DEF_JCONFIG            0x905
+  set DEF_JRDBK              0x904
+  set DEF_BYPASS             0xFFF
+  set DEF_CMD_IDCODE         0x249
+} else {
+  puts "Unsupported Board: $BOARD"
+}
 
 #Defines UltraScale configuration register commands
 set DEF_TYPE_1 001
@@ -692,6 +704,7 @@ proc rdbk_jtag {argfile_log_name argFrameCount argStartAddress argOverwrite skip
   global arrayHexBinVal
   global DEF_WPF
   global file_log
+  global DEF_FDR_PIPE_DEPTH
 
   global optOverwrite
 
@@ -715,10 +728,12 @@ proc rdbk_jtag {argfile_log_name argFrameCount argStartAddress argOverwrite skip
   puts "Rdbk cmd length = $iRdbkCmdLength"
    
 
-  scan_ir_hw_jtag 6 -tdi $DEF_JCONFIG
+  if {$BOARD == "SIDEWINDER"} {
+    scan_ir_hw_jtag 12 -tdi $DEF_JCONFIG
+  }
   scan_dr_hw_jtag $iRdbkCmdLength -tdi $sTdiData
   
-  set iReadbackCount [expr (($DEF_WPF * ($argFrameCount + 1) + 10) * 32)]
+  set iReadbackCount [expr (($DEF_WPF * ($argFrameCount + 1) + $DEF_FDR_PIPE_DEPTH) * 32)]
   puts "----------------------------------------------------------------"
   puts "==> Framecount = $argFrameCount"
   puts "    Configuration readback count = $iReadbackCount"
@@ -726,7 +741,9 @@ proc rdbk_jtag {argfile_log_name argFrameCount argStartAddress argOverwrite skip
   puts "----------------------------------------------------------------"
 
 
-  scan_ir_hw_jtag 6 -tdi $DEF_JRDBK
+  if {$BOARD == "SIDEWINDER"} {
+    scan_ir_hw_jtag 12 -tdi $DEF_JRDBK
+  }
   set sReadback [scan_dr_hw_jtag $iReadbackCount -tdi 0]
 
   if { $skipPostProcess } {
@@ -775,8 +792,9 @@ proc rdbk_jtag {argfile_log_name argFrameCount argStartAddress argOverwrite skip
     puts "==> Readback string length = $numchars"
   }
 
-  scan_ir_hw_jtag 6 -tdi $DEF_BYPASS
-
+  if {$BOARD == "SIDEWINDER"} {
+    scan_ir_hw_jtag 12 -tdi $DEF_BYPASS
+  }
   close $fileOutput
 
   set sOperationStop  [clock format [clock seconds]]
